@@ -110,37 +110,8 @@ st.markdown(
 )
 
 # =========================================================
-# SIDEBAR — BRANDING & INFO
+# SESSION STATE
 # =========================================================
-with st.sidebar:
-    st.markdown("### 📊 Dashboard Saham")
-    st.caption("Analitik Fundamental & Prediksi (GRU + XGBoost)")
-    st.divider()
-    st.markdown(
-        "**Alur pemakaian:**\n"
-        "1. Upload data di tab *Upload Data*\n"
-        "2. Lihat rasio di tab *Analisis Rasio Keuangan*\n"
-        "3. Latih model di tab *Prediksi Harga*\n"
-        "4. Lihat rekomendasi di tab *Ringkasan & KPI*"
-    )
-    if st.session_state.get("df_harga") is not None:
-        st.divider()
-        st.caption(f"📈 Data harga aktif: **{len(st.session_state.df_harga)} baris**")
-    if st.session_state.get("df_keuangan"):
-        st.caption(f"🏢 Perusahaan fundamental: **{len(st.session_state.df_keuangan)}**")
-
-# =========================================================
-# NAVIGASI TAB
-# =========================================================
-tab1, tab2, tab3, tab4 = st.tabs(
-    [
-        "📁  Upload Data",
-        "📊  Analisis Rasio Keuangan",
-        "🤖  Prediksi Harga (GRU & XGBoost)",
-        "✅  Ringkasan & Rekomendasi KPI",
-    ]
-)
-
 if "df_harga" not in st.session_state:
     st.session_state.df_harga = None
 if "df_keuangan" not in st.session_state:
@@ -154,16 +125,45 @@ if "forecast_results" not in st.session_state:
 if "eval_results" not in st.session_state:
     st.session_state.eval_results = {}       # {"GRU": {"rmse":.., "mae":.., "mape":..}, "XGBoost": {...}}
 
+RATIO_NAMES = ["EPS", "ROA", "ROE", "CR", "DER", "PER"]
+PERCENT_RATIOS = ["ROA", "ROE"]  # rasio yang biasanya dalam bentuk persen
+
+
+def normalisasi_nama_kolom(nama):
+    """Samakan nama kolom biar cocok walau ada spasi/simbol/huruf besar-kecil beda."""
+    return (
+        str(nama).strip().upper()
+        .replace("(%)", "").replace("%", "")
+        .replace(" ", "").replace("-", "").replace("_", "")
+    )
+
+
+def bersihkan_kolom_angka(series, is_percent=False):
+    """Bersihkan kolom rasio: hapus '%', tangani None/kosong, ubah ke angka.
+    Untuk kolom persen: kalau nilainya pecahan (mis. 0.1542) ubah ke skala persen (15.42)."""
+    series = series.astype(str).str.replace("%", "", regex=False).str.strip()
+    series = series.replace({"None": None, "none": None, "nan": None, "NaN": None, "": None})
+    series = pd.to_numeric(series, errors="coerce")
+    if is_percent:
+        non_null = series.dropna()
+        if len(non_null) > 0 and non_null.abs().max() <= 1:
+            series = series * 100
+    return series
+
 
 # =========================================================
-# HALAMAN 1 — UPLOAD DATA
+# SIDEBAR — PANEL KONTROL (UPLOAD DATA)
 # =========================================================
-with tab1:
-    st.title("Upload Data")
+with st.sidebar:
+    st.markdown("### 📊 Panel Kontrol")
+    st.caption("Upload dataset (.csv/.xlsx) untuk mulai menggunakan dashboard.")
+    st.divider()
 
-    st.subheader("A. Data Harga Saham (harian)")
-    st.caption("Kolom wajib: **Date, Close**. Kolom lain (Open, High, Low, Volume) opsional.")
-    file_harga = st.file_uploader("Upload CSV harga saham", type=["csv"], key="upload_harga")
+    st.markdown("**A. Data Harga Saham**")
+    st.caption("Kolom wajib: Date, Close")
+    file_harga = st.file_uploader(
+        "Upload CSV harga saham", type=["csv"], key="upload_harga", label_visibility="collapsed"
+    )
 
     if file_harga is not None:
         df = pd.read_csv(file_harga)
@@ -175,58 +175,19 @@ with tab1:
             df = df.sort_values("Date").reset_index(drop=True)
             df = df.dropna(subset=["Close"]).reset_index(drop=True)
             st.session_state.df_harga = df
-            st.success(f"Berhasil upload {len(df)} baris data harga.")
-
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Jumlah Data", f"{len(df):,}")
-            m2.metric("Periode Awal", df["Date"].min().strftime("%d %b %Y"))
-            m3.metric("Periode Akhir", df["Date"].max().strftime("%d %b %Y"))
-            m4.metric("Harga Terakhir", f"Rp {df['Close'].iloc[-1]:,.0f}")
-
-            st.dataframe(df.tail(10), use_container_width=True)
-            fig, ax = plt.subplots(figsize=(10, 3))
-            ax.plot(df["Date"], df["Close"])
-            ax.set_title("Preview Harga Saham")
-            ax.grid(True)
-            st.pyplot(fig)
+            st.success(f"{len(df)} baris data harga ter-upload.")
 
     st.divider()
 
-    st.subheader("B. Data Fundamental / Rasio Keuangan (satu file per perusahaan)")
-    st.caption(
-        "Upload **satu file per perusahaan** (Excel .xlsx atau CSV). "
-        "Tiap file punya kolom **Waktu** (mis. tahun: 2021, 2022, ...) dan kolom rasio: "
-        "**EPS, ROA, ROE, CR, DER, PER**."
-    )
+    st.markdown("**B. Data Fundamental**")
+    st.caption("1 file per perusahaan — kolom: Waktu, EPS, ROA, ROE, CR, DER, PER")
     files_fundamental = st.file_uploader(
-        "Upload file data fundamental (bisa pilih banyak file sekaligus)",
+        "Upload file data fundamental",
         type=["xlsx", "csv"],
         accept_multiple_files=True,
         key="upload_fundamental",
+        label_visibility="collapsed",
     )
-
-    RATIO_NAMES = ["EPS", "ROA", "ROE", "CR", "DER", "PER"]
-    PERCENT_RATIOS = ["ROA", "ROE"]  # rasio yang biasanya dalam bentuk persen
-
-    def normalisasi_nama_kolom(nama):
-        """Samakan nama kolom biar cocok walau ada spasi/simbol/huruf besar-kecil beda."""
-        return (
-            str(nama).strip().upper()
-            .replace("(%)", "").replace("%", "")
-            .replace(" ", "").replace("-", "").replace("_", "")
-        )
-
-    def bersihkan_kolom_angka(series, is_percent=False):
-        """Bersihkan kolom rasio: hapus '%', tangani None/kosong, ubah ke angka.
-        Untuk kolom persen: kalau nilainya pecahan (mis. 0.1542) ubah ke skala persen (15.42)."""
-        series = series.astype(str).str.replace("%", "", regex=False).str.strip()
-        series = series.replace({"None": None, "none": None, "nan": None, "NaN": None, "": None})
-        series = pd.to_numeric(series, errors="coerce")
-        if is_percent:
-            non_null = series.dropna()
-            if len(non_null) > 0 and non_null.abs().max() <= 1:
-                series = series * 100
-        return series
 
     if files_fundamental:
         company_data = {}
@@ -240,7 +201,7 @@ with tab1:
             ) or f.name
 
             nama_perusahaan = st.text_input(
-                f"Nama perusahaan untuk file '{f.name}'",
+                f"Nama perusahaan ('{f.name}')",
                 value=default_name,
                 key=f"nama_{f.name}",
             )
@@ -251,7 +212,7 @@ with tab1:
                 else:
                     fdf = pd.read_excel(f, sheet_name=0)
             except Exception as e:
-                st.error(f"Gagal membaca file '{f.name}': {e}")
+                st.error(f"Gagal membaca '{f.name}': {e}")
                 continue
 
             fdf.columns = [str(c).strip() for c in fdf.columns]
@@ -261,7 +222,7 @@ with tab1:
             kolom_waktu_asli = peta_kolom.get("WAKTU")
 
             if kolom_waktu_asli is None:
-                st.error(f"File '{f.name}' dilewati: tidak ada kolom 'Waktu'. Kolom terdeteksi: {list(fdf.columns)}")
+                st.error(f"'{f.name}' dilewati: tidak ada kolom 'Waktu'.")
                 continue
 
             rename_map = {kolom_waktu_asli: "Waktu"}
@@ -272,7 +233,7 @@ with tab1:
                     kolom_rasio_ada.append(rasio)
 
             if not kolom_rasio_ada:
-                st.error(f"File '{f.name}' dilewati: tidak ada kolom rasio yang dikenal. Kolom terdeteksi: {list(fdf.columns)}")
+                st.error(f"'{f.name}' dilewati: tidak ada kolom rasio yang dikenal.")
                 continue
 
             fdf = fdf.rename(columns=rename_map)
@@ -283,19 +244,67 @@ with tab1:
 
             kolom_kosong = [kol for kol in kolom_rasio_ada if fdf[kol].isna().all()]
             if kolom_kosong:
-                st.warning(f"File '{f.name}': kolom {kolom_kosong} kosong semua setelah dibersihkan — cek isi filenya.")
+                st.warning(f"'{f.name}': kolom {kolom_kosong} kosong semua.")
 
             company_data[nama_perusahaan] = fdf
 
         if company_data:
             st.session_state.df_keuangan = company_data
-            st.success(
-                f"Berhasil upload data fundamental {len(company_data)} perusahaan: "
-                + ", ".join(company_data.keys())
-            )
-            for nama, fdf in company_data.items():
-                with st.expander(f"Preview data {nama}"):
-                    st.dataframe(fdf, use_container_width=True)
+            st.success(f"{len(company_data)} perusahaan ter-upload.")
+
+    st.divider()
+    if st.session_state.get("df_harga") is not None:
+        st.caption(f"📈 Data harga aktif: **{len(st.session_state.df_harga)} baris**")
+    if st.session_state.get("df_keuangan"):
+        st.caption(f"🏢 Perusahaan fundamental: **{len(st.session_state.df_keuangan)}**")
+
+# =========================================================
+# NAVIGASI TAB
+# =========================================================
+tab1, tab2, tab3, tab4 = st.tabs(
+    [
+        "📁  Ringkasan Data",
+        "📊  Analisis Rasio Keuangan",
+        "🤖  Prediksi Harga (GRU & XGBoost)",
+        "✅  Ringkasan & Rekomendasi KPI",
+    ]
+)
+
+
+# =========================================================
+# HALAMAN 1 — RINGKASAN DATA (upload dilakukan di Panel Kontrol/sidebar)
+# =========================================================
+with tab1:
+    st.title("Ringkasan Data")
+    st.caption("Upload data harga saham dan data fundamental lewat **Panel Kontrol** di sidebar kiri.")
+
+    df = st.session_state.df_harga
+    if df is None:
+        st.info("Belum ada data harga saham. Silakan upload di Panel Kontrol (sidebar kiri).")
+    else:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Jumlah Data", f"{len(df):,}")
+        m2.metric("Periode Awal", df["Date"].min().strftime("%d %b %Y"))
+        m3.metric("Periode Akhir", df["Date"].max().strftime("%d %b %Y"))
+        m4.metric("Harga Terakhir", f"Rp {df['Close'].iloc[-1]:,.0f}")
+
+        st.dataframe(df.tail(10), use_container_width=True)
+        fig, ax = plt.subplots(figsize=(10, 3))
+        ax.plot(df["Date"], df["Close"])
+        ax.set_title("Preview Harga Saham")
+        ax.grid(True)
+        st.pyplot(fig)
+
+    st.divider()
+    st.subheader("Data Fundamental")
+
+    company_data = st.session_state.df_keuangan
+    if not company_data:
+        st.info("Belum ada data fundamental. Silakan upload di Panel Kontrol (sidebar kiri).")
+    else:
+        for nama, fdf in company_data.items():
+            with st.expander(f"Preview data {nama}"):
+                st.dataframe(fdf, use_container_width=True)
 
     with st.expander("Contoh format file data fundamental (1 file = 1 perusahaan)"):
         contoh = pd.DataFrame({
@@ -319,7 +328,7 @@ with tab2:
 
     company_data = st.session_state.df_keuangan
     if not company_data:
-        st.warning("Silakan upload data fundamental dulu di halaman '1. Upload Data'.")
+        st.warning("Silakan upload data fundamental dulu lewat Panel Kontrol di sidebar kiri.")
     else:
         RATIO_ORDER = ["EPS", "ROA", "ROE", "CR", "DER", "PER"]
         RATIO_LABEL = {
@@ -415,7 +424,7 @@ with tab3:
 
     df = st.session_state.df_harga
     if df is None:
-        st.warning("Silakan upload data harga saham dulu di halaman '1. Upload Data'.")
+        st.warning("Silakan upload data harga saham dulu lewat Panel Kontrol di sidebar kiri.")
     else:
         algo = st.radio(
             "Pilih Algoritma",
@@ -596,12 +605,6 @@ with tab3:
         # =====================================================
         else:
             st.subheader("Pengaturan Model XGBoost")
-            st.caption(
-                "Model diproses menggunakan pendekatan **log-return** (bukan harga absolut), karena "
-                "XGBoost sebagai model berbasis pohon keputusan tidak dapat melakukan ekstrapolasi "
-                "nilai di luar rentang data pelatihan. Log-return bersifat lebih stasioner sehingga "
-                "prediksi menjadi lebih stabil (Tsay, 2010)."
-            )
 
             future_days_xgb = st.slider(
                 "🗓️ Rentang Waktu Prediksi ke Depan (hari kerja)",
@@ -747,13 +750,6 @@ with tab3:
 
                     st.success("Model XGBoost selesai dilatih!")
 
-                    st.write("**Hyperparameter terbaik (Bayesian Optimization):**")
-                    st.json({
-                        "n_estimators": n_estimators, "max_depth": max_depth,
-                        "learning_rate": round(learning_rate_xgb, 5), "subsample": round(subsample, 3),
-                        "colsample_bytree": round(colsample_bytree, 3), "min_child_weight": round(min_child_weight, 3),
-                    })
-
                     if rmse_xgb is not None:
                         m1, m2, m3 = st.columns(3)
                         m1.metric("RMSE", f"{rmse_xgb:.4f}")
@@ -831,7 +827,7 @@ with tab4:
 
     company_data = st.session_state.df_keuangan
     if not company_data:
-        st.warning("Silakan upload data fundamental dulu di halaman '1. Upload Data'.")
+        st.warning("Silakan upload data fundamental dulu lewat Panel Kontrol di sidebar kiri.")
     else:
         perusahaan_dipilih = st.selectbox("Pilih perusahaan", sorted(company_data.keys()))
         pdf = company_data[perusahaan_dipilih].sort_values("Waktu")
