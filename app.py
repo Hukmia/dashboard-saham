@@ -159,7 +159,7 @@ with st.sidebar:
     st.caption("Upload dataset (.csv/.xlsx) untuk mulai menggunakan dashboard.")
     st.divider()
 
-    st.markdown("**A. Data Harga Saham**")
+    st.markdown("**Data Harga Saham**")
     st.caption("Kolom wajib: Date, Close")
     file_harga = st.file_uploader(
         "Upload CSV harga saham", type=["csv"], key="upload_harga", label_visibility="collapsed"
@@ -179,7 +179,7 @@ with st.sidebar:
 
     st.divider()
 
-    st.markdown("**B. Data Fundamental**")
+    st.markdown("**Data Fundamental**")
     st.caption("1 file per perusahaan — kolom: Waktu, EPS, ROA, ROE, CR, DER, PER")
     files_fundamental = st.file_uploader(
         "Upload file data fundamental",
@@ -428,7 +428,7 @@ with tab3:
     else:
         algo = st.radio(
             "Pilih Algoritma",
-            ["GRU (Deep Learning)", "XGBoost (Machine Learning)"],
+            ["GRU", "XGBoost"],
             horizontal=True,
         )
 
@@ -624,7 +624,7 @@ with tab3:
                 if len(df) < window_size_xgb + future_days_xgb + 20:
                     st.error("Data terlalu sedikit untuk window size & horizon ini. Tambah data atau kecilkan angkanya.")
                 else:
-                    with st.spinner("Melatih model XGBoost (Bayesian Optimization), mohon tunggu..."):
+                    with st.spinner("Melatih model XGBoost, mohon tunggu..."):
                         from xgboost import XGBRegressor
                         from sklearn.multioutput import MultiOutputRegressor
                         from bayes_opt import BayesianOptimization
