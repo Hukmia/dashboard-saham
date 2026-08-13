@@ -240,7 +240,7 @@ with st.sidebar:
     # =====================================================
     # A. DATA HARGA SAHAM
     # =====================================================
-    st.markdown("**A. Data Harga Saham**")
+    st.markdown("**Data Harga Saham**")
     st.caption("Kolom wajib: Date, Close")
 
     if sumber_data == "Upload file":
@@ -289,7 +289,7 @@ with st.sidebar:
     # =====================================================
     # B. DATA FUNDAMENTAL
     # =====================================================
-    st.markdown("**B. Data Fundamental**")
+    st.markdown("**Data Fundamental**")
     st.caption("1 file/link per perusahaan — kolom: Waktu, EPS, ROA, ROE, CR, DER, PER")
 
     def proses_fundamental(fdf, nama_file, nama_perusahaan, company_data):
@@ -605,14 +605,14 @@ with tab3:
     else:
         algo = st.radio(
             "Pilih Algoritma",
-            ["GRU (Deep Learning)", "XGBoost (Machine Learning)"],
+            ["GRU", "XGBoost"],
             horizontal=True,
         )
 
         # =====================================================
         # ALGORITMA: GRU
         # =====================================================
-        if algo == "GRU (Deep Learning)":
+        if algo == "GRU":
             st.subheader("Pengaturan Model GRU")
 
             future_days = st.slider(
