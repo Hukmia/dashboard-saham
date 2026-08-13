@@ -112,10 +112,80 @@ st.markdown(
 # =========================================================
 # SESSION STATE
 # =========================================================
+
+# ---------------------------------------------------------
+# DATA DEFAULT / SAMPLE (BUKAN DATA KESELURUHAN)
+# Data ini ditulis langsung di kode (bukan file terpisah) sebagai
+# tampilan awal dashboard sebelum pengguna upload/link data sendiri.
+# Harga saham: contoh 24 titik bulanan (bukan data harian lengkap).
+# Data fundamental: data rasio keuangan 5 tahun (2021-2025) untuk 5 emiten.
+# ---------------------------------------------------------
+DEFAULT_HARGA_SAMPLE = pd.DataFrame({
+    "Date": pd.date_range(start="2024-01-01", periods=24, freq="MS"),
+    "Close": [
+        12100, 12450, 12800, 13100, 13300, 13050,
+        12700, 12200, 11800, 11500, 11200, 10900,
+        10600, 10300, 10100, 9950, 9800, 9700,
+        9650, 9600, 9700, 9750, 9780, 9764,
+    ],
+})
+
+DEFAULT_FUNDAMENTAL_SAMPLE = {
+    "PGUN": pd.DataFrame({
+        "Waktu": [2021, 2022, 2023, 2024, 2025],
+        "EPS": [7.69, 30.00, 18.83, 13.80, 27.76],
+        "ROA": [1.54, 7.33, 4.17, 3.00, 6.32],
+        "ROE": [2.49, 12.05, 6.65, 4.42, 8.30],
+        "CR": [1.09, 1.61, 1.81, 1.76, 1.52],
+        "DER": [0.51, 0.48, 0.35, 0.27, 0.19],
+        "PER": [50.46, 26.83, 22.09, 30.72, 352.13],
+    }),
+    "TAPG": pd.DataFrame({
+        "Waktu": [2021, 2022, 2023, 2024, 2025],
+        "EPS": [58.38, 150.16, 81.01, 157.17, 186.49],
+        "ROA": [9.31, 20.52, 11.60, 21.81, 25.19],
+        "ROE": [15.43, 29.75, 14.76, 28.87, 33.03],
+        "CR": [1.53, 1.76, 1.25, 1.37, 2.13],
+        "DER": [0.45, 0.23, 0.10, 0.10, 0.10],
+        "PER": [10.45, 4.23, 6.73, 4.87, 8.04],
+    }),
+    "FAPA": pd.DataFrame({
+        "Waktu": [2021, 2022, 2023, 2024, 2025],
+        "EPS": [105.92, 195.39, 42.31, 149.47, 293.54],
+        "ROA": [4.85, 8.22, 1.78, 6.15, 10.37],
+        "ROE": [12.82, 19.11, 3.97, 14.80, 28.76],
+        "CR": [1.39, 0.88, 0.69, 0.76, 0.82],
+        "DER": [1.34, 0.83, 0.66, 0.77, 0.94],
+        "PER": [30.31, 22.01, 125.27, 36.13, 21.72],
+    }),
+    "SMAR": pd.DataFrame({
+        "Waktu": [2021, 2022, 2023, 2024, 2025],
+        "EPS": [984.20, 1915.09, 319.55, 445.02, 899.98],
+        "ROA": [7.01, 12.91, 2.31, 2.82, 5.72],
+        "ROE": [19.62, 28.60, 4.82, 6.43, 11.53],
+        "CR": [1.45, 1.96, 1.87, 1.83, 1.66],
+        "DER": [0.90, 0.63, 0.54, 0.56, 0.58],
+        "PER": [4.43, 2.58, 12.52, 8.20, 5.30],
+    }),
+    "DSNG": pd.DataFrame({
+        "Waktu": [2021, 2022, 2023, 2024, 2025],
+        "EPS": [68.60, 113.85, 79.23, 107.78, 173.63],
+        "ROA": [5.30, 7.86, 5.19, 6.56, 10.45],
+        "ROE": [10.54, 15.02, 9.64, 11.75, 16.03],
+        "CR": [1.25, 1.07, 1.00, 1.15, 1.35],
+        "DER": [0.71, 0.62, 0.59, 0.54, 0.31],
+        "PER": [7.29, 5.27, 7.00, 8.81, 8.87],
+    }),
+}
+
 if "df_harga" not in st.session_state:
-    st.session_state.df_harga = None
+    st.session_state.df_harga = DEFAULT_HARGA_SAMPLE.copy()
 if "df_keuangan" not in st.session_state:
-    st.session_state.df_keuangan = None
+    st.session_state.df_keuangan = {k: v.copy() for k, v in DEFAULT_FUNDAMENTAL_SAMPLE.items()}
+if "pakai_data_default" not in st.session_state:
+    st.session_state.pakai_data_default = True
+if "emiten_dipilih" not in st.session_state:
+    st.session_state.emiten_dipilih = list(DEFAULT_FUNDAMENTAL_SAMPLE.keys())
 if "model" not in st.session_state:
     st.session_state.model = None
 if "scaler" not in st.session_state:
@@ -152,111 +222,216 @@ def bersihkan_kolom_angka(series, is_percent=False):
 
 
 # =========================================================
-# SIDEBAR — PANEL KONTROL (UPLOAD DATA)
+# SIDEBAR — PANEL KONTROL
 # =========================================================
 with st.sidebar:
     st.markdown("### 📊 Panel Kontrol")
-    st.caption("Upload dataset (.csv/.xlsx) untuk mulai menggunakan dashboard.")
+    st.caption("Upload dataset (.csv/.xlsx) atau tempel link dataset untuk mulai.")
+
+    sumber_data = st.radio(
+        "Sumber data",
+        ["Upload file", "Link Dataset"],
+        horizontal=True,
+        key="sumber_data",
+    )
+
     st.divider()
 
-    st.markdown("**Data Harga Saham**")
+    # =====================================================
+    # A. DATA HARGA SAHAM
+    # =====================================================
+    st.markdown("**A. Data Harga Saham**")
     st.caption("Kolom wajib: Date, Close")
-    file_harga = st.file_uploader(
-        "Upload CSV harga saham", type=["csv"], key="upload_harga", label_visibility="collapsed"
-    )
 
-    if file_harga is not None:
-        df = pd.read_csv(file_harga)
-        df.columns = [c.strip() for c in df.columns]
-        if "Date" not in df.columns or "Close" not in df.columns:
-            st.error("CSV harus punya kolom 'Date' dan 'Close'.")
-        else:
-            df["Date"] = pd.to_datetime(df["Date"])
-            df = df.sort_values("Date").reset_index(drop=True)
-            df = df.dropna(subset=["Close"]).reset_index(drop=True)
-            st.session_state.df_harga = df
-            st.success(f"{len(df)} baris data harga ter-upload.")
+    if sumber_data == "Upload file":
+        file_harga = st.file_uploader(
+            "Upload CSV harga saham", type=["csv"], key="upload_harga", label_visibility="collapsed"
+        )
+        if file_harga is not None:
+            df = pd.read_csv(file_harga)
+            df.columns = [c.strip() for c in df.columns]
+            if "Date" not in df.columns or "Close" not in df.columns:
+                st.error("CSV harus punya kolom 'Date' dan 'Close'.")
+            else:
+                df["Date"] = pd.to_datetime(df["Date"])
+                df = df.sort_values("Date").reset_index(drop=True)
+                df = df.dropna(subset=["Close"]).reset_index(drop=True)
+                st.session_state.df_harga = df
+                st.session_state.pakai_data_default = False
+                st.success(f"{len(df)} baris data harga ter-upload.")
+    else:
+        link_harga = st.text_input(
+            "Link Dataset (raw CSV — mis. dari GitHub)",
+            placeholder="https://raw.githubusercontent.com/user/repo/main/harga_saham.csv",
+            key="link_harga",
+        )
+        if st.button("📥 Muat Data Harga dari Link", key="btn_link_harga"):
+            if not link_harga:
+                st.error("Isi dulu link dataset-nya.")
+            else:
+                try:
+                    df = pd.read_csv(link_harga)
+                    df.columns = [c.strip() for c in df.columns]
+                    if "Date" not in df.columns or "Close" not in df.columns:
+                        st.error("CSV dari link harus punya kolom 'Date' dan 'Close'.")
+                    else:
+                        df["Date"] = pd.to_datetime(df["Date"])
+                        df = df.sort_values("Date").reset_index(drop=True)
+                        df = df.dropna(subset=["Close"]).reset_index(drop=True)
+                        st.session_state.df_harga = df
+                        st.session_state.pakai_data_default = False
+                        st.success(f"{len(df)} baris data harga dimuat dari link.")
+                except Exception as e:
+                    st.error(f"Gagal memuat link: {e}")
+
+    st.divider()
+
+    # =====================================================
+    # B. DATA FUNDAMENTAL
+    # =====================================================
+    st.markdown("**B. Data Fundamental**")
+    st.caption("1 file/link per perusahaan — kolom: Waktu, EPS, ROA, ROE, CR, DER, PER")
+
+    def proses_fundamental(fdf, nama_file, nama_perusahaan, company_data):
+        fdf.columns = [str(c).strip() for c in fdf.columns]
+        peta_kolom = {normalisasi_nama_kolom(c): c for c in fdf.columns}
+        kolom_waktu_asli = peta_kolom.get("WAKTU")
+        if kolom_waktu_asli is None:
+            st.error(f"'{nama_file}' dilewati: tidak ada kolom 'Waktu'.")
+            return
+        rename_map = {kolom_waktu_asli: "Waktu"}
+        kolom_rasio_ada = []
+        for rasio in RATIO_NAMES:
+            if rasio in peta_kolom:
+                rename_map[peta_kolom[rasio]] = rasio
+                kolom_rasio_ada.append(rasio)
+        if not kolom_rasio_ada:
+            st.error(f"'{nama_file}' dilewati: tidak ada kolom rasio yang dikenal.")
+            return
+        fdf = fdf.rename(columns=rename_map)
+        fdf = fdf[["Waktu"] + kolom_rasio_ada].dropna(subset=["Waktu"]).reset_index(drop=True)
+        for kol in kolom_rasio_ada:
+            fdf[kol] = bersihkan_kolom_angka(fdf[kol], is_percent=(kol in PERCENT_RATIOS))
+        company_data[nama_perusahaan] = fdf
+
+    if sumber_data == "Upload file":
+        files_fundamental = st.file_uploader(
+            "Upload file data fundamental",
+            type=["xlsx", "csv"],
+            accept_multiple_files=True,
+            key="upload_fundamental",
+            label_visibility="collapsed",
+        )
+        if files_fundamental:
+            company_data = {}
+            for f in files_fundamental:
+                default_name = (
+                    f.name.rsplit(".", 1)[0].upper()
+                    .replace("DATA SEMHAS", "").replace("DATA", "").strip()
+                ) or f.name
+                nama_perusahaan = st.text_input(
+                    f"Nama perusahaan ('{f.name}')", value=default_name, key=f"nama_{f.name}",
+                )
+                try:
+                    fdf = pd.read_csv(f) if f.name.lower().endswith(".csv") else pd.read_excel(f, sheet_name=0)
+                except Exception as e:
+                    st.error(f"Gagal membaca '{f.name}': {e}")
+                    continue
+                proses_fundamental(fdf, f.name, nama_perusahaan, company_data)
+
+            if company_data:
+                st.session_state.df_keuangan = company_data
+                st.session_state.emiten_dipilih = list(company_data.keys())
+                st.session_state.pakai_data_default = False
+                st.success(f"{len(company_data)} perusahaan ter-upload.")
+    else:
+        st.caption("Format: `NamaEmiten1=link1;NamaEmiten2=link2`")
+        link_fundamental = st.text_area(
+            "Link Dataset Fundamental (per perusahaan)",
+            placeholder="PGUN=https://raw.githubusercontent.com/.../pgun.csv;TAPG=https://raw.githubusercontent.com/.../tapg.csv",
+            key="link_fundamental",
+            label_visibility="collapsed",
+        )
+        if st.button("📥 Muat Data Fundamental dari Link", key="btn_link_fundamental"):
+            if not link_fundamental:
+                st.error("Isi dulu link dataset-nya.")
+            else:
+                company_data = {}
+                pasangan = [p.strip() for p in link_fundamental.split(";") if p.strip()]
+                for p in pasangan:
+                    if "=" not in p:
+                        st.warning(f"Format dilewati (tidak ada '='): {p}")
+                        continue
+                    nama_perusahaan, url = p.split("=", 1)
+                    nama_perusahaan = nama_perusahaan.strip()
+                    url = url.strip()
+                    try:
+                        fdf = pd.read_csv(url) if url.lower().endswith(".csv") else pd.read_excel(url, sheet_name=0)
+                    except Exception as e:
+                        st.error(f"Gagal memuat '{nama_perusahaan}': {e}")
+                        continue
+                    proses_fundamental(fdf, nama_perusahaan, nama_perusahaan, company_data)
+
+                if company_data:
+                    st.session_state.df_keuangan = company_data
+                    st.session_state.emiten_dipilih = list(company_data.keys())
+                    st.session_state.pakai_data_default = False
+                    st.success(f"{len(company_data)} perusahaan dimuat dari link.")
 
     st.divider()
 
-    st.markdown("**Data Fundamental**")
-    st.caption("1 file per perusahaan — kolom: Waktu, EPS, ROA, ROE, CR, DER, PER")
-    files_fundamental = st.file_uploader(
-        "Upload file data fundamental",
-        type=["xlsx", "csv"],
-        accept_multiple_files=True,
-        key="upload_fundamental",
-        label_visibility="collapsed",
-    )
-
-    if files_fundamental:
-        company_data = {}
-        for f in files_fundamental:
-            default_name = (
-                f.name.rsplit(".", 1)[0]
-                .upper()
-                .replace("DATA SEMHAS", "")
-                .replace("DATA", "")
-                .strip()
-            ) or f.name
-
-            nama_perusahaan = st.text_input(
-                f"Nama perusahaan ('{f.name}')",
-                value=default_name,
-                key=f"nama_{f.name}",
-            )
-
-            try:
-                if f.name.lower().endswith(".csv"):
-                    fdf = pd.read_csv(f)
-                else:
-                    fdf = pd.read_excel(f, sheet_name=0)
-            except Exception as e:
-                st.error(f"Gagal membaca '{f.name}': {e}")
-                continue
-
-            fdf.columns = [str(c).strip() for c in fdf.columns]
-
-            # cocokkan nama kolom rasio secara fleksibel (tahan spasi/simbol/huruf besar-kecil)
-            peta_kolom = {normalisasi_nama_kolom(c): c for c in fdf.columns}
-            kolom_waktu_asli = peta_kolom.get("WAKTU")
-
-            if kolom_waktu_asli is None:
-                st.error(f"'{f.name}' dilewati: tidak ada kolom 'Waktu'.")
-                continue
-
-            rename_map = {kolom_waktu_asli: "Waktu"}
-            kolom_rasio_ada = []
-            for rasio in RATIO_NAMES:
-                if rasio in peta_kolom:
-                    rename_map[peta_kolom[rasio]] = rasio
-                    kolom_rasio_ada.append(rasio)
-
-            if not kolom_rasio_ada:
-                st.error(f"'{f.name}' dilewati: tidak ada kolom rasio yang dikenal.")
-                continue
-
-            fdf = fdf.rename(columns=rename_map)
-            fdf = fdf[["Waktu"] + kolom_rasio_ada].dropna(subset=["Waktu"]).reset_index(drop=True)
-
-            for kol in kolom_rasio_ada:
-                fdf[kol] = bersihkan_kolom_angka(fdf[kol], is_percent=(kol in PERCENT_RATIOS))
-
-            kolom_kosong = [kol for kol in kolom_rasio_ada if fdf[kol].isna().all()]
-            if kolom_kosong:
-                st.warning(f"'{f.name}': kolom {kolom_kosong} kosong semua.")
-
-            company_data[nama_perusahaan] = fdf
-
-        if company_data:
-            st.session_state.df_keuangan = company_data
-            st.success(f"{len(company_data)} perusahaan ter-upload.")
+    # =====================================================
+    # C. PILIH EMITEN (multiselect, tampil sebagai pill seperti contoh)
+    # =====================================================
+    st.markdown("**Emiten**")
+    daftar_emiten = sorted(st.session_state.df_keuangan.keys()) if st.session_state.df_keuangan else []
+    if daftar_emiten:
+        emiten_dipilih = st.multiselect(
+            "Pilih emiten yang ditampilkan",
+            options=daftar_emiten,
+            default=[e for e in st.session_state.emiten_dipilih if e in daftar_emiten] or daftar_emiten,
+            label_visibility="collapsed",
+        )
+        st.session_state.emiten_dipilih = emiten_dipilih
+    else:
+        st.caption("Belum ada data fundamental.")
 
     st.divider()
-    if st.session_state.get("df_harga") is not None:
-        st.caption(f"📈 Data harga aktif: **{len(st.session_state.df_harga)} baris**")
-    if st.session_state.get("df_keuangan"):
-        st.caption(f"🏢 Perusahaan fundamental: **{len(st.session_state.df_keuangan)}**")
+
+    # =====================================================
+    # D. TEMPLATE / SAMPLE DATASET
+    # =====================================================
+    st.markdown("**Template Dataset**")
+    st.caption("Unduh dulu untuk lihat struktur data yang benar sebelum upload.")
+
+    csv_template_harga = pd.DataFrame({
+        "Date": ["2025-01-02", "2025-01-03", "2025-01-06"],
+        "Close": [9800, 9850, 9820],
+    }).to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "⬇️ Template Data Harga Saham", csv_template_harga,
+        "template_data_harga_saham.csv", "text/csv", key="dl_template_harga",
+    )
+
+    csv_template_fundamental = pd.DataFrame({
+        "Waktu": [2021, 2022, 2023, 2024, 2025],
+        "EPS": [12.13, 2.95, 0.09, 12.80, 27.22],
+        "ROA": ["8.25%", "2.31%", "0.06%", "8.17%", "15.42%"],
+        "ROE": ["43.87%", "11.15%", "0.20%", "22.32%", "33.38%"],
+        "CR": [1.10, 0.98, 0.94, 1.15, 1.39],
+        "DER": [3.85, 3.34, 1.98, 1.46, 0.91],
+        "PER": [0.00, 0.00, 1966.67, 21.56, 33.98],
+    }).to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "⬇️ Template Data Fundamental", csv_template_fundamental,
+        "template_data_fundamental.csv", "text/csv", key="dl_template_fundamental",
+    )
+
+    st.divider()
+    if st.session_state.pakai_data_default:
+        st.info("📌 Dashboard sedang menampilkan **data contoh**. Upload/tempel link data sendiri untuk analisis penuh.")
+    st.caption(f"📈 Data harga aktif: **{len(st.session_state.df_harga)} baris**")
+    st.caption(f"🏢 Perusahaan fundamental: **{len(st.session_state.df_keuangan)}**")
 
 # =========================================================
 # NAVIGASI TAB
@@ -302,9 +477,10 @@ with tab1:
     if not company_data:
         st.info("Belum ada data fundamental. Silakan upload di Panel Kontrol (sidebar kiri).")
     else:
-        for nama, fdf in company_data.items():
+        emiten_tampil = [e for e in st.session_state.emiten_dipilih if e in company_data] or sorted(company_data.keys())
+        for nama in emiten_tampil:
             with st.expander(f"Preview data {nama}"):
-                st.dataframe(fdf, use_container_width=True)
+                st.dataframe(company_data[nama], use_container_width=True)
 
     with st.expander("Contoh format file data fundamental (1 file = 1 perusahaan)"):
         contoh = pd.DataFrame({
@@ -341,10 +517,11 @@ with tab2:
         }
 
         semua_perusahaan = sorted(company_data.keys())
+        default_terpilih = [e for e in st.session_state.emiten_dipilih if e in semua_perusahaan] or semua_perusahaan
         perusahaan_dipilih = st.multiselect(
             "Pilih perusahaan yang mau dibandingkan",
             options=semua_perusahaan,
-            default=semua_perusahaan,
+            default=default_terpilih,
         )
 
         if not perusahaan_dipilih:
@@ -428,7 +605,7 @@ with tab3:
     else:
         algo = st.radio(
             "Pilih Algoritma",
-            ["GRU", "XGBoost"],
+            ["GRU (Deep Learning)", "XGBoost (Machine Learning)"],
             horizontal=True,
         )
 
@@ -624,7 +801,7 @@ with tab3:
                 if len(df) < window_size_xgb + future_days_xgb + 20:
                     st.error("Data terlalu sedikit untuk window size & horizon ini. Tambah data atau kecilkan angkanya.")
                 else:
-                    with st.spinner("Melatih model XGBoost, mohon tunggu..."):
+                    with st.spinner("Melatih model XGBoost (Bayesian Optimization), mohon tunggu..."):
                         from xgboost import XGBRegressor
                         from sklearn.multioutput import MultiOutputRegressor
                         from bayes_opt import BayesianOptimization
@@ -829,7 +1006,8 @@ with tab4:
     if not company_data:
         st.warning("Silakan upload data fundamental dulu lewat Panel Kontrol di sidebar kiri.")
     else:
-        perusahaan_dipilih = st.selectbox("Pilih perusahaan", sorted(company_data.keys()))
+        opsi_perusahaan_kpi = [e for e in st.session_state.emiten_dipilih if e in company_data] or sorted(company_data.keys())
+        perusahaan_dipilih = st.selectbox("Pilih perusahaan", opsi_perusahaan_kpi)
         pdf = company_data[perusahaan_dipilih].sort_values("Waktu")
         data_terbaru = pdf.iloc[-1]
 
