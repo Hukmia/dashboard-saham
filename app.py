@@ -221,6 +221,34 @@ def bersihkan_kolom_angka(series, is_percent=False):
     return series
 
 
+# ---------------------------------------------------------
+# DATA DARI GITHUB (otomatis dimuat, tanpa upload dari laptop)
+# File CSV ada di repo: https://github.com/Hukmia/dashboard-saham
+#   - Harga      : {EMITEN}_2021_2025.csv  (kolom: Date, Close, ...)
+#   - Fundamental: {EMITEN}.csv            (kolom: Waktu, EPS, ROA, ROE, CR, DER, PER)
+# ---------------------------------------------------------
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/Hukmia/dashboard-saham/main"
+DAFTAR_EMITEN_GITHUB = ["PGUN", "TAPG", "FAPA", "SMAR", "DSNG"]
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def muat_harga_github(emiten):
+    df = pd.read_csv(f"{GITHUB_RAW_BASE}/{emiten}_2021_2025.csv")
+    df.columns = [c.strip() for c in df.columns]
+    df["Date"] = pd.to_datetime(df["Date"])
+    return df.sort_values("Date").dropna(subset=["Close"]).reset_index(drop=True)
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def muat_fundamental_github(emiten):
+    fdf = pd.read_csv(f"{GITHUB_RAW_BASE}/{emiten}.csv")
+    fdf.columns = [c.strip() for c in fdf.columns]
+    for kol in RATIO_NAMES:
+        if kol in fdf.columns:
+            fdf[kol] = bersihkan_kolom_angka(fdf[kol], is_percent=(kol in PERCENT_RATIOS))
+    return fdf
+
+
 # =========================================================
 # SIDEBAR — PANEL KONTROL
 # =========================================================
@@ -230,7 +258,7 @@ with st.sidebar:
 
     sumber_data = st.radio(
         "Sumber data",
-        ["Upload file", "Link Dataset"],
+        ["Data GitHub", "Upload file", "Link Dataset"],
         horizontal=True,
         key="sumber_data",
     )
@@ -243,7 +271,17 @@ with st.sidebar:
     st.markdown("**Data Harga Saham**")
     st.caption("Kolom wajib: Date, Close")
 
-    if sumber_data == "Upload file":
+    if sumber_data == "Data GitHub":
+        emiten_harga = st.selectbox(
+            "Pilih emiten (harga saham)", DAFTAR_EMITEN_GITHUB, key="emiten_harga_github"
+        )
+        try:
+            st.session_state.df_harga = muat_harga_github(emiten_harga)
+            st.session_state.pakai_data_default = False
+            st.success(f"{len(st.session_state.df_harga)} baris data harga {emiten_harga} dimuat dari GitHub.")
+        except Exception as e:
+            st.error(f"Gagal memuat data GitHub: {e}")
+    elif sumber_data == "Upload file":
         file_harga = st.file_uploader(
             "Upload CSV harga saham", type=["csv"], key="upload_harga", label_visibility="collapsed"
         )
@@ -259,7 +297,7 @@ with st.sidebar:
                 st.session_state.df_harga = df
                 st.session_state.pakai_data_default = False
                 st.success(f"{len(df)} baris data harga ter-upload.")
-    else:
+    elif sumber_data == "Link Dataset":
         link_harga = st.text_input(
             "Link Dataset (raw CSV — mis. dari GitHub)",
             placeholder="https://raw.githubusercontent.com/user/repo/main/harga_saham.csv",
@@ -314,7 +352,17 @@ with st.sidebar:
             fdf[kol] = bersihkan_kolom_angka(fdf[kol], is_percent=(kol in PERCENT_RATIOS))
         company_data[nama_perusahaan] = fdf
 
-    if sumber_data == "Upload file":
+    if sumber_data == "Data GitHub":
+        try:
+            company_data = {e: muat_fundamental_github(e) for e in DAFTAR_EMITEN_GITHUB}
+            if set(st.session_state.df_keuangan.keys()) != set(company_data.keys()):
+                st.session_state.emiten_dipilih = list(company_data.keys())
+            st.session_state.df_keuangan = company_data
+            st.session_state.pakai_data_default = False
+            st.success(f"{len(company_data)} perusahaan dimuat dari GitHub.")
+        except Exception as e:
+            st.error(f"Gagal memuat data fundamental GitHub: {e}")
+    elif sumber_data == "Upload file":
         files_fundamental = st.file_uploader(
             "Upload file data fundamental",
             type=["xlsx", "csv"],
@@ -344,7 +392,7 @@ with st.sidebar:
                 st.session_state.emiten_dipilih = list(company_data.keys())
                 st.session_state.pakai_data_default = False
                 st.success(f"{len(company_data)} perusahaan ter-upload.")
-    else:
+    elif sumber_data == "Link Dataset":
         st.caption("Format: `NamaEmiten1=link1;NamaEmiten2=link2`")
         link_fundamental = st.text_area(
             "Link Dataset Fundamental (per perusahaan)",
